@@ -136,7 +136,7 @@ def main():
       gTTS(text=obj_text, lang=language, slow=False).save("Text.mp3")
       os.system("mpg321 -q Text.mp3")
 
-    # DistanceMeasure()
+    DistanceMeasure()
 
 if __name__ == '__main__':
   main()
