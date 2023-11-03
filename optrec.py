@@ -25,28 +25,21 @@ cap = cv2.VideoCapture(0)
 PIN_TRIGGER = 7
 PIN_ECHO = 11
 
-def ObjectRecognition(cap, model: str, max_results: int, score_threshold: float, num_threads: int,
-        enable_edgetpu: bool, camera_id: int, width: int, height: int) -> None:
+def ObjectRecognition(cap, model: str, max_results: int, score_threshold: float, num_threads: int, enable_edgetpu: bool, camera_id: int, width: int, height: int) -> None:
 
   # Initialize the image classification model
-  base_options = core.BaseOptions(
-      file_name=model, use_coral=enable_edgetpu, num_threads=num_threads)
+  base_options = core.BaseOptions(file_name=model, use_coral=enable_edgetpu, num_threads=num_threads)
 
   # Enable Coral by this setting
-  classification_options = processor.ClassificationOptions(
-      max_results=max_results, score_threshold=score_threshold)
-  options = vision.ImageClassifierOptions(
-      base_options=base_options, classification_options=classification_options)
+  classification_options = processor.ClassificationOptions(max_results=max_results, score_threshold=score_threshold)
+  options = vision.ImageClassifierOptions(base_options=base_options, classification_options=classification_options)
 
   classifier = vision.ImageClassifier.create_from_options(options)
 
   success, image = cap.read()
   if not success:
-    sys.exit(
-        'ERROR: Unable to read from webcam. Please verify your webcam settings.'
-    )
+    sys.exit('ERROR: Unable to read from webcam. Please verify your webcam settings.')
 
-  # counter += 1
   image = cv2.flip(image, 1)
 
   # Convert the image from BGR to RGB as required by the TFLite model.
@@ -66,61 +59,53 @@ def ObjectRecognition(cap, model: str, max_results: int, score_threshold: float,
     return category_name
 
 def OpticalCharacterRecognition(cap):
-    success, image = cap.read()
-    if not success:
-      sys.exit(
-          'ERROR: Unable to read from webcam. Please verify your webcam settings.'
-      )
-    
-    return pytesseract.image_to_string(image)
+  success, image = cap.read()
+  if not success:
+    sys.exit('ERROR: Unable to read from webcam. Please verify your webcam settings.')
+
+  return pytesseract.image_to_string(image)
 
 def DistanceMeasure():
-  try:
-        GPIO.setmode(GPIO.BOARD)
+  print ("Calculating distance")
 
-        GPIO.setup(PIN_TRIGGER, GPIO.OUT)
-        GPIO.setup(PIN_ECHO, GPIO.IN)
+  GPIO.output(PIN_TRIGGER, GPIO.HIGH)
 
-        GPIO.output(PIN_TRIGGER, GPIO.LOW)
+  time.sleep(0.00001)
 
-        print ("Waiting for sensor to settle")
+  GPIO.output(PIN_TRIGGER, GPIO.LOW)
 
-        time.sleep(2)
+  while GPIO.input(PIN_ECHO)==0:
+    pulse_start_time = time.time()
+  while GPIO.input(PIN_ECHO)==1:
+    pulse_end_time = time.time()
 
-        print ("Calculating distance")
-
-        GPIO.output(PIN_TRIGGER, GPIO.HIGH)
-
-        time.sleep(0.00001)
-
-        GPIO.output(PIN_TRIGGER, GPIO.LOW)
-
-        while GPIO.input(PIN_ECHO)==0:
-              pulse_start_time = time.time()
-        while GPIO.input(PIN_ECHO)==1:
-              pulse_end_time = time.time()
-
-        pulse_duration = pulse_end_time - pulse_start_time
-        distance = round(pulse_duration * 17150, 2)
-        print ("Distance:",distance,"cm")
-
-  finally:
-        GPIO.cleanup()
+  pulse_duration = pulse_end_time - pulse_start_time
+  distance = round(pulse_duration * 17150, 2)
+  return distance
 
 def handler(signum, frame):
-    cap.release()
-    sys.exit("Done")
+  GPIO.cleanup()
+  cap.release()
+  sys.exit("Done")
 
 def main():
-  language = 'en'
-
   signal.signal(signal.SIGINT, handler)  # prevent "crashing" with ctrl+C
+
+  language = 'en'
 
   cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
   cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
 
   prev_ocr_text = ""
   prev_obj_text = ""
+  prev_dist = 0
+
+  GPIO.setmode(GPIO.BOARD)
+
+  GPIO.setup(PIN_TRIGGER, GPIO.OUT)
+  GPIO.setup(PIN_ECHO, GPIO.IN)
+
+  GPIO.output(PIN_TRIGGER, GPIO.LOW)
 
   while cap.isOpened():
     ocr_text = OpticalCharacterRecognition(cap)
@@ -136,7 +121,12 @@ def main():
       gTTS(text=obj_text, lang=language, slow=False).save("Text.mp3")
       os.system("mpg321 -q Text.mp3")
 
-    DistanceMeasure()
+    dist = DistanceMeasure()
+    if (dist != prev_dist) and not (prev_dist - 1 <= dist <= prev_dist + 1):
+      print ("Distance:",dist,"cm")
+      prev_dist = dist
+      gTTS(text=str(dist), lang=language, slow=False).save("Text.mp3")
+      os.system("mpg321 -q Text.mp3")
 
 if __name__ == '__main__':
   main()
